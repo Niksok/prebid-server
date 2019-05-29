@@ -3,6 +3,20 @@
   "title": "VIS.X Adapter Params",
   "description": "A schema which validates params accepted by VIS.X adapter",
   "type": "object",
-  "properties": {},
-  "required": []
+  "properties": {
+    "uid": {
+      "type": "integer",
+      "description": "An ID which identifies this placement of the impression"
+    },
+    "size": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      },
+      "minItems": 2,
+      "maxItems": 2,
+      "description": "An array of two integer containing the dimension"
+    }
+  },
+  "required": ["uid"]
 }
