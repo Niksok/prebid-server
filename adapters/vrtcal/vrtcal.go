@@ -1,4 +1,4 @@
-package grid
+package vrtcal
 
 import (
 	"encoding/json"
@@ -10,33 +10,38 @@ import (
 	"github.com/prebid/prebid-server/errortypes"
 )
 
-type GridAdapter struct {
+type VrtcalAdapter struct {
 	endpoint string
 }
 
-// MakeRequests makes the HTTP requests which should be made to fetch bids.
-func (a *GridAdapter) MakeRequests(request *openrtb.BidRequest, reqInfo *adapters.ExtraRequestInfo) ([]*adapters.RequestData, []error) {
-	var errors = make([]error, 0)
+func (a *VrtcalAdapter) MakeRequests(request *openrtb.BidRequest, reqInfo *adapters.ExtraRequestInfo) ([]*adapters.RequestData, []error) {
+	var errs []error
+	var adapterRequests []*adapters.RequestData
 
 	reqJSON, err := json.Marshal(request)
 	if err != nil {
-		errors = append(errors, err)
-		return nil, errors
+		errs = append(errs, err)
+		return nil, errs
 	}
 
 	headers := http.Header{}
 	headers.Add("Content-Type", "application/json;charset=utf-8")
 
-	return []*adapters.RequestData{{
+	reqData := adapters.RequestData{
 		Method:  "POST",
 		Uri:     a.endpoint,
 		Body:    reqJSON,
 		Headers: headers,
-	}}, errors
+	}
+
+	adapterRequests = append(adapterRequests, &reqData)
+
+	return adapterRequests, errs
 }
 
-// MakeBids unpacks the server's response into Bids.
-func (a *GridAdapter) MakeBids(internalRequest *openrtb.BidRequest, externalRequest *adapters.RequestData, response *adapters.ResponseData) (*adapters.BidderResponse, []error) {
+// MakeBids make the bids for the bid response.
+func (a *VrtcalAdapter) MakeBids(internalRequest *openrtb.BidRequest, externalRequest *adapters.RequestData, response *adapters.ResponseData) (*adapters.BidderResponse, []error) {
+
 	if response.StatusCode == http.StatusNoContent {
 		return nil, nil
 	}
@@ -54,6 +59,7 @@ func (a *GridAdapter) MakeBids(internalRequest *openrtb.BidRequest, externalRequ
 	}
 
 	var bidResp openrtb.BidResponse
+
 	if err := json.Unmarshal(response.Body, &bidResp); err != nil {
 		return nil, []error{err}
 	}
@@ -72,9 +78,8 @@ func (a *GridAdapter) MakeBids(internalRequest *openrtb.BidRequest, externalRequ
 
 }
 
-// NewGridBidder configure bidder endpoint
-func NewGridBidder(endpoint string) *GridAdapter {
-	return &GridAdapter{
+func NewVrtcalBidder(endpoint string) *VrtcalAdapter {
+	return &VrtcalAdapter{
 		endpoint: endpoint,
 	}
 }
