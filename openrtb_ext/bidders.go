@@ -30,6 +30,7 @@ const (
 	BidderBrightroll     BidderName = "brightroll"
 	BidderConsumable     BidderName = "consumable"
 	BidderConversant     BidderName = "conversant"
+	BidderEmxDigital     BidderName = "emx_digital"
 	BidderEPlanning      BidderName = "eplanning"
 	BidderFacebook       BidderName = "audienceNetwork"
 	BidderGamoshi        BidderName = "gamoshi"
@@ -49,7 +50,9 @@ const (
 	BidderSomoaudience   BidderName = "somoaudience"
 	BidderSovrn          BidderName = "sovrn"
 	BidderSonobi         BidderName = "sonobi"
+	BidderTriplelift     BidderName = "triplelift"
 	BidderUnruly         BidderName = "unruly"
+	BidderVerizonMedia   BidderName = "verizonmedia"
 	BidderVrtcal         BidderName = "vrtcal"
 	BidderYieldmo        BidderName = "yieldmo"
 	BidderVisx           BidderName = "visx"
@@ -69,6 +72,7 @@ var BidderMap = map[string]BidderName{
 	"brightroll":      BidderBrightroll,
 	"consumable":      BidderConsumable,
 	"conversant":      BidderConversant,
+	"emx_digital":     BidderEmxDigital,
 	"eplanning":       BidderEPlanning,
 	"gamoshi":         BidderGamoshi,
 	"grid":            BidderGrid,
@@ -87,7 +91,9 @@ var BidderMap = map[string]BidderName{
 	"somoaudience":    BidderSomoaudience,
 	"sovrn":           BidderSovrn,
 	"sonobi":          BidderSonobi,
+	"triplelift":      BidderTriplelift,
 	"unruly":          BidderUnruly,
+	"verizonmedia":    BidderVerizonMedia,
 	"vrtcal":          BidderVrtcal,
 	"yieldmo":         BidderYieldmo,
 	"visx":            BidderVisx,
