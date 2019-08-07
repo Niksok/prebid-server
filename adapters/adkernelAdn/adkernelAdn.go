@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"text/template"
 
 	"github.com/golang/glog"
@@ -21,7 +22,7 @@ type adkernelAdnAdapter struct {
 }
 
 //MakeRequests prepares request information for prebid-server core
-func (adapter *adkernelAdnAdapter) MakeRequests(request *openrtb.BidRequest) ([]*adapters.RequestData, []error) {
+func (adapter *adkernelAdnAdapter) MakeRequests(request *openrtb.BidRequest, reqInfo *adapters.ExtraRequestInfo) ([]*adapters.RequestData, []error) {
 	errs := make([]error, 0, len(request.Imp))
 	if len(request.Imp) == 0 {
 		errs = append(errs, newBadInputError("No impression in the bid request"))
@@ -200,7 +201,8 @@ func (adapter *adkernelAdnAdapter) buildEndpointURL(params *openrtb_ext.ExtImpAd
 	if params.Host != "" {
 		reqHost = params.Host
 	}
-	endpointParams := macros.EndpointTemplateParams{Host: reqHost, PublisherID: params.PublisherID}
+	pubIDStr := strconv.Itoa(params.PublisherID)
+	endpointParams := macros.EndpointTemplateParams{Host: reqHost, PublisherID: pubIDStr}
 	return macros.ResolveMacros(adapter.EndpointTemplate, endpointParams)
 }
 
