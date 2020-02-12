@@ -65,7 +65,7 @@ func NewVideoEndpoint(ex exchange.Exchange, validator openrtb_ext.BidderParamVal
 */
 func (deps *endpointDeps) VideoAuctionEndpoint(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 
-	ao := analytics.AuctionObject{
+	vo := analytics.VideoObject{
 		Status: http.StatusOK,
 		Errors: make([]error, 0),
 	}
@@ -75,20 +75,15 @@ func (deps *endpointDeps) VideoAuctionEndpoint(w http.ResponseWriter, r *http.Re
 		Source:        pbsmetrics.DemandUnknown,
 		RType:         pbsmetrics.ReqTypeVideo,
 		PubID:         pbsmetrics.PublisherUnknown,
-		Browser:       pbsmetrics.BrowserOther,
+		Browser:       getBrowserName(r),
 		CookieFlag:    pbsmetrics.CookieFlagUnknown,
 		RequestStatus: pbsmetrics.RequestStatusOK,
 	}
 	defer func() {
 		deps.metricsEngine.RecordRequest(labels)
 		deps.metricsEngine.RecordRequestTime(labels, time.Since(start))
-		deps.analytics.LogAuctionObject(&ao)
+		deps.analytics.LogVideoObject(&vo)
 	}()
-
-	isSafari := checkSafari(r)
-	if isSafari {
-		labels.Browser = pbsmetrics.BrowserSafari
-	}
 
 	lr := &io.LimitedReader{
 		R: r.Body,
@@ -96,8 +91,7 @@ func (deps *endpointDeps) VideoAuctionEndpoint(w http.ResponseWriter, r *http.Re
 	}
 	requestJson, err := ioutil.ReadAll(lr)
 	if err != nil {
-		errL := []error{err}
-		handleError(labels, w, errL, ao)
+		handleError(&labels, w, []error{err}, &vo)
 		return
 	}
 
@@ -106,38 +100,39 @@ func (deps *endpointDeps) VideoAuctionEndpoint(w http.ResponseWriter, r *http.Re
 	//load additional data - stored simplified req
 	storedRequestId, err := getVideoStoredRequestId(requestJson)
 
-	if err != nil && deps.cfg.VideoStoredRequestRequired {
-		errL := []error{err}
-		handleError(labels, w, errL, ao)
-		return
-	}
-	if err == nil {
+	if err != nil {
+		if deps.cfg.VideoStoredRequestRequired {
+			handleError(&labels, w, []error{err}, &vo)
+			return
+		}
+	} else {
 		storedRequest, errs := deps.loadStoredVideoRequest(context.Background(), storedRequestId)
 		if len(errs) > 0 {
-			handleError(labels, w, errs, ao)
+			handleError(&labels, w, errs, &vo)
 			return
 		}
 
 		//merge incoming req with stored video req
 		resolvedRequest, err = jsonpatch.MergePatch(storedRequest, requestJson)
 		if err != nil {
-			errL := []error{err}
-			handleError(labels, w, errL, ao)
+			handleError(&labels, w, []error{err}, &vo)
 			return
 		}
 	}
 	//unmarshal and validate combined result
 	videoBidReq, errL, podErrors := deps.parseVideoRequest(resolvedRequest)
 	if len(errL) > 0 {
-		handleError(labels, w, errL, ao)
+		handleError(&labels, w, errL, &vo)
 		return
 	}
+
+	vo.VideoRequest = videoBidReq
 
 	var bidReq = &openrtb.BidRequest{}
 	if deps.defaultRequest {
 		if err := json.Unmarshal(deps.defReqJSON, bidReq); err != nil {
 			err = fmt.Errorf("Invalid JSON in Default Request Settings: %s", err)
-			errL = []error{err}
+			handleError(&labels, w, []error{err}, &vo)
 			return
 		}
 	}
@@ -161,7 +156,7 @@ func (deps *endpointDeps) VideoAuctionEndpoint(w http.ResponseWriter, r *http.Re
 		}
 		err := errors.New(fmt.Sprintf("all pods are incorrect: %s", strings.Join(resPodErr, "; ")))
 		errL = append(errL, err)
-		handleError(labels, w, errL, ao)
+		handleError(&labels, w, errL, &vo)
 		return
 	}
 
@@ -173,7 +168,7 @@ func (deps *endpointDeps) VideoAuctionEndpoint(w http.ResponseWriter, r *http.Re
 
 	errL = deps.validateRequest(bidReq)
 	if len(errL) > 0 {
-		handleError(labels, w, errL, ao)
+		handleError(&labels, w, errL, &vo)
 		return
 	}
 
@@ -199,13 +194,18 @@ func (deps *endpointDeps) VideoAuctionEndpoint(w http.ResponseWriter, r *http.Re
 		labels.PubID = effectivePubID(bidReq.Site.Publisher)
 	}
 
+	if acctIdErr := validateAccount(deps.cfg, labels.PubID); acctIdErr != nil {
+		errL = append(errL, acctIdErr)
+		handleError(&labels, w, errL, &vo)
+		return
+	}
 	//execute auction logic
 	response, err := deps.ex.HoldAuction(ctx, bidReq, usersyncs, labels, &deps.categories)
-	ao.Request = bidReq
-	ao.Response = response
+	vo.Request = bidReq
+	vo.Response = response
 	if err != nil {
 		errL := []error{err}
-		handleError(labels, w, errL, ao)
+		handleError(&labels, w, errL, &vo)
 		return
 	}
 
@@ -213,18 +213,20 @@ func (deps *endpointDeps) VideoAuctionEndpoint(w http.ResponseWriter, r *http.Re
 	bidResp, err := buildVideoResponse(response, podErrors)
 	if err != nil {
 		errL := []error{err}
-		handleError(labels, w, errL, ao)
+		handleError(&labels, w, errL, &vo)
 		return
 	}
 	if bidReq.Test == 1 {
 		bidResp.Ext = response.Ext
 	}
 
+	vo.VideoResponse = bidResp
+
 	resp, err := json.Marshal(bidResp)
 	//resp, err := json.Marshal(response)
 	if err != nil {
 		errL := []error{err}
-		handleError(labels, w, errL, ao)
+		handleError(&labels, w, errL, &vo)
 		return
 	}
 
@@ -240,17 +242,28 @@ func cleanupVideoBidRequest(videoReq *openrtb_ext.BidRequestVideo, podErrors []P
 	return videoReq
 }
 
-func handleError(labels pbsmetrics.Labels, w http.ResponseWriter, errL []error, ao analytics.AuctionObject) {
+func handleError(labels *pbsmetrics.Labels, w http.ResponseWriter, errL []error, vo *analytics.VideoObject) {
 	labels.RequestStatus = pbsmetrics.RequestStatusErr
-	w.WriteHeader(http.StatusInternalServerError)
 	var errors string
+	var status int = http.StatusInternalServerError
 	for _, er := range errL {
+		erVal := errortypes.DecodeError(er)
+		if erVal == errortypes.BlacklistedAppCode || erVal == errortypes.BlacklistedAcctCode {
+			status = http.StatusServiceUnavailable
+			labels.RequestStatus = pbsmetrics.RequestStatusBlacklisted
+			break
+		} else if erVal == errortypes.AcctRequiredCode {
+			status = http.StatusBadRequest
+			labels.RequestStatus = pbsmetrics.RequestStatusBadInput
+			break
+		}
 		errors = fmt.Sprintf("%s %s", errors, er.Error())
 	}
+	w.WriteHeader(status)
+	vo.Status = status
 	fmt.Fprintf(w, "Critical error while running the video endpoint: %v", errors)
 	glog.Errorf("/openrtb2/video Critical error: %v", errors)
-	ao.Status = http.StatusInternalServerError
-	ao.Errors = append(ao.Errors, errL...)
+	vo.Errors = append(vo.Errors, errL...)
 }
 
 func (deps *endpointDeps) createImpressions(videoReq *openrtb_ext.BidRequestVideo, podErrors []PodError) ([]openrtb.Imp, []PodError) {
@@ -491,15 +504,29 @@ func mergeData(videoRequest *openrtb_ext.BidRequestVideo, bidRequest *openrtb.Bi
 		bidRequest.TMax = videoRequest.TMax
 	}
 
+	if videoRequest.Regs != nil {
+		bidRequest.Regs = videoRequest.Regs
+	}
+
 	return nil
 }
 
 func createBidExtension(videoRequest *openrtb_ext.BidRequestVideo) ([]byte, error) {
 
-	inclBrandCat := openrtb_ext.ExtIncludeBrandCategory{
-		PrimaryAdServer: videoRequest.IncludeBrandCategory.PrimaryAdserver,
-		Publisher:       videoRequest.IncludeBrandCategory.Publisher,
+	var inclBrandCat *openrtb_ext.ExtIncludeBrandCategory
+	if videoRequest.IncludeBrandCategory != nil {
+		inclBrandCat = &openrtb_ext.ExtIncludeBrandCategory{
+			PrimaryAdServer:     videoRequest.IncludeBrandCategory.PrimaryAdserver,
+			Publisher:           videoRequest.IncludeBrandCategory.Publisher,
+			WithCategory:        true,
+			TranslateCategories: videoRequest.IncludeBrandCategory.TranslateCategories,
+		}
+	} else {
+		inclBrandCat = &openrtb_ext.ExtIncludeBrandCategory{
+			WithCategory: false,
+		}
 	}
+
 	var durationRangeSec []int
 	if !videoRequest.PodConfig.RequireExactDuration {
 		durationRangeSec = videoRequest.PodConfig.DurationRangeSec
@@ -617,9 +644,19 @@ func (deps *endpointDeps) validateVideoRequest(req *openrtb_ext.BidRequestVideo)
 	} else if req.Site != nil && req.Site.ID == "" && req.Site.Page == "" {
 		err := errors.New("request.site missing required field: id or page")
 		errL = append(errL, err)
-	} else if req.App != nil && req.App.ID == "" && req.App.Bundle == "" {
-		err := errors.New("request.app missing required field: id or bundle")
-		errL = append(errL, err)
+	} else if req.App != nil {
+		if req.App.ID != "" {
+			if _, found := deps.cfg.BlacklistedAppMap[req.App.ID]; found {
+				err := &errortypes.BlacklistedApp{Message: fmt.Sprintf("Prebid-server does not process requests from App ID: %s", req.App.ID)}
+				errL = append(errL, err)
+				return errL, podErrors
+			}
+		} else {
+			if req.App.Bundle == "" {
+				err := errors.New("request.app missing required field: id or bundle")
+				errL = append(errL, err)
+			}
+		}
 	}
 
 	if len(req.Video.Mimes) == 0 {
