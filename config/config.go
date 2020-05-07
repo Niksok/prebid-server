@@ -64,6 +64,8 @@ type Configuration struct {
 	AccountRequired bool `mapstructure:"account_required"`
 	// Local private file containing SSL certificates
 	PemCertsFile string `mapstructure:"certificates_file"`
+	// Custom headers to handle request timeouts from queueing infrastructure
+	RequestTimeoutHeaders RequestTimeoutHeaders `mapstructure:"request_timeout_headers"`
 }
 
 const MIN_COOKIE_SIZE_BYTES = 500
@@ -199,6 +201,11 @@ type HostCookie struct {
 	TTL int64 `mapstructure:"ttl_days"`
 }
 
+type RequestTimeoutHeaders struct {
+	RequestTimeInQueue    string `mapstructure:"request_time_in_queue"`
+	RequestTimeoutInQueue string `mapstructure:"request_timeout_in_queue"`
+}
+
 func (cfg *HostCookie) TTLDuration() time.Duration {
 	return time.Duration(cfg.TTL) * time.Hour * 24
 }
@@ -214,7 +221,7 @@ const (
 type Adapter struct {
 	Endpoint string `mapstructure:"endpoint"` // Required
 	// UserSyncURL is the URL returned by /cookie_sync for this Bidder. It is _usually_ optional.
-	// If not defined, sensible defaults will be derved based on the config.external_url.
+	// If not defined, sensible defaults will be derived based on the config.external_url.
 	// Note that some Bidders don't have sensible defaults, because their APIs require an ID that will vary
 	// from one PBS host to another.
 	//
@@ -487,21 +494,25 @@ func (cfg *Configuration) setDerivedDefaults() {
 	externalURL := cfg.ExternalURL
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.Bidder33Across, "https://ic.tynt.com/r/d?m=xch&rt=html&gdpr={{.GDPR}}&gdpr_consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&ru="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3D33across%26uid%3D33XUSERID33X&id=zzz000000000002zzz")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderAdform, "https://cm.adform.net/cookie?redirect_url="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dadform%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24UID")
+	// openrtb_ext.BidderAdgeneration doesn't have a good default.
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderAdkernel, "https://sync.adkernel.com/user-sync?t=image&gdpr={{.GDPR}}&gdpr_consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&r="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dadkernel%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%7BUID%7D")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderAdkernelAdn, "https://tag.adkernel.com/syncr?gdpr={{.GDPR}}&gdpr_consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&r="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3DadkernelAdn%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%7BUID%7D")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderAdpone, "https://usersync.adpone.com/csync?redir="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dadpone%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%7Buid%7D")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderAdtelligent, "https://sync.adtelligent.com/csync?t=p&ep=0&redir="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dadtelligent%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%7Buid%7D")
+	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderAdmixer, "https://inv-nets.admixer.net/adxcm.aspx?gdpr={{.GDPR}}&gdpr_consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&redir=1&rurl="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dadmixer%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24%24visitor_cookie%24%24")
+	// openrtb_ext.BidderAdOcean doesn't have a good default.
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderAdvangelists, "https://nep.advangelists.com/xp/user-sync?acctid={aid}&&redirect="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dadvangelists%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24UID")
+	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderAJA, "https://ad.as.amanad.adtdp.com/v1/sync/ssp?ssp=4&gdpr={{.GDPR}}&us_privacy={{.USPrivacy}}&redir="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Daja%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%25s")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderAppnexus, "https://ib.adnxs.com/getuid?"+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dadnxs%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24UID")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderBeachfront, "https://sync.bfmio.com/sync_s2s?gdpr={{.GDPR}}&us_privacy={{.USPrivacy}}&url="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dbeachfront%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%5Bio_cid%5D")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderBrightroll, "https://pr-bh.ybp.yahoo.com/sync/appnexusprebidserver/?gdpr={{.GDPR}}&euconsent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&url="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dbrightroll%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24UID")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderConsumable, "https://e.serverbid.com/udb/9969/match?gdpr={{.GDPR}}&euconsent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&redir="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dconsumable%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D")
-	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderConversant, "https://prebid-match.dotomi.com/prebid/match/bounce/current?rurl="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dconversant%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26networkId%3D72582%26version%3D1%26uid%3D")
+	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderConversant, "https://prebid-match.dotomi.com/match/bounce/current?version=1&networkId=72582&rurl="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dconversant%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderCpmstar, "https://server.cpmstar.com/usersync.aspx?gdpr={{.GDPR}}&consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&redirect="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dcpmstar%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24UID")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderDatablocks, "https://sync.v5prebid.datablocks.net/s2ssync?gdpr={{.GDPR}}&gdpr_consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&r="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Ddatablocks%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24%7Buid%7D")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderEmxDigital, "https://cs.emxdgt.com/um?ssp=pbs&gdpr={{.GDPR}}&gdpr_consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&redirect="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Demx_digital%26uid%3D%24UID")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderEngageBDR, "https://match.bnmla.com/usersync/s2s_sync?gdpr={{.GDPR}}&gdpr_consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&r="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dengagebdr%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24%7BUUID%7D")
-	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderEPlanning, "https://ads.us.e-planning.net/uspd/1/?du=https%3A%2F%2Fads.us.e-planning.net%2Fgetuid%2F1%2F5a1ad71d2d53a0f5%3F"+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Deplanning%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24UID")
+	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderEPlanning, "https://ads.us.e-planning.net/uspd/1/?du="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Deplanning%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24UID")
 	// openrtb_ext.BidderFacebook doesn't have a good default.
 	// openrtb_ext.BidderGamma doesn't have a good default.
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderGamoshi, "https://rtb.gamoshi.io/user_sync_prebid?gdpr={{.GDPR}}&consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&rurl="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dgamoshi%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%5Bgusr%5D")
@@ -511,9 +522,12 @@ func (cfg *Configuration) setDerivedDefaults() {
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderIx, "https://ssum.casalemedia.com/usermatchredir?s=184932&cb="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dix%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderLifestreet, "https://ads.lfstmedia.com/idsync/137062?synced=1&ttl=1s&rurl="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dlifestreet%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24%24visitor_cookie%24%24")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderLockerDome, "https://lockerdome.com/usync/prebidserver?pid="+cfg.Adapters["lockerdome"].PlatformID+"&gdpr={{.GDPR}}&gdpr_consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&redirect="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dlockerdome%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%7B%7Buid%7D%7D")
+	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderLunaMedia, "https://api.lunamedia.io/xp/user-sync?redirect="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dlunamedia%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24UID")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderMarsmedia, "https://dmp.rtbsrv.com/dmp/profiles/cm?p_id=179&gdpr={{.GDPR}}&gdpr_consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&redirect="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dmarsmedia%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24%7BUUID%7D")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderMgid, "https://cm.mgid.com/m?cdsp=363893&adu="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dmgid%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%7Bmuidn%7D")
-	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderOpenx, "https://rtb.openx.net/sync/prebid?r="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dopenx%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24%7BUID%7D")
+	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderNanoInteractive, "https://ad.audiencemanager.de/hbs/cookie_sync?gdpr={{.GDPR}}&consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&redirectUri="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dnanointeractive%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24UID")
+	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderNinthDecimal, "https://rtb.ninthdecimal.com/xp/user-sync?acctid={aid}&&redirect="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dninthdecimal%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24UID")
+	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderOpenx, "https://rtb.openx.net/sync/prebid?gdpr={{.GDPR}}&gdpr_consent={{.GDPRConsent}}&r="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dopenx%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24%7BUID%7D")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderPubmatic, "https://ads.pubmatic.com/AdServer/js/user_sync.html?gdpr={{.GDPR}}&gdpr_consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&predirect="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dpubmatic%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderPulsepoint, "https://bh.contextweb.com/rtset?pid=561205&ev=1&rurl="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dpulsepoint%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%25%25VGUID%25%25")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderRhythmone, "https://sync.1rx.io/usersync2/rmphb?gdpr={{.GDPR}}&gdpr_consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&redir="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Drhythmone%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%5BRX_UUID%5D")
@@ -526,12 +540,17 @@ func (cfg *Configuration) setDerivedDefaults() {
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderSovrn, "https://ap.lijit.com/pixel?redir="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dsovrn%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24UID")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderSynacormedia, "https://sync.technoratimedia.com/services?srv=cs&pid=70&cb="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dsynacormedia%26uid%3D%5BUSER_ID%5D")
 	// openrtb_ext.BidderTappx doesn't have a good default.
+	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderTelaria, "https://pbs.publishers.tremorhub.com/pubsync?gdpr={{.GDPR}}&gdpr_consent={{.GDPRConsent}}&redir="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dtelaria%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%5Btvid%5D")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderTriplelift, "https://eb2.3lift.com/getuid?gdpr={{.GDPR}}&cmp_cs={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&redir="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dtriplelift%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24UID")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderTripleliftNative, "https://eb2.3lift.com/getuid?gdpr={{.GDPR}}&cmp_cs={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&redir="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dtriplelift_native%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24UID")
+	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderUcfunnel, "https://sync.aralego.com/idsync?gdpr={{.GDPR}}&gdpr_consent={{.GDPRConsent}}&usprivacy={{.USPrivacy}}&redirect="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Ducfunnel%26uid%3DSspCookieUserId")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderUnruly, "https://usermatch.targeting.unrulymedia.com/pbsync?gdpr={{.GDPR}}&consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&rurl="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dunruly%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24UID")
+	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderValueImpression, "https://rtb.valueimpression.com/usersync?gdpr={{.GDPR}}&consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&redirect="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dvalueimpression%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24UID")
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderVisx, "https://t.visx.net/s2s_sync?gdpr={{.GDPR}}&gdpr_consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&redir="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dvisx%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24%7BUUID%7D")
 	// openrtb_ext.BidderVrtcal doesn't have a good default.
 	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderYieldmo, "https://ads.yieldmo.com/pbsync?gdpr={{.GDPR}}&gdpr_consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&redirectUri="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dyieldmo%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24UID")
+	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderYieldone, "https://y.one.impact-ad.jp/hbs_sc?gdpr={{.GDPR}}&gdpr_consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&redirectUri="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dyieldone%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24UID")
+	setDefaultUsersync(cfg.Adapters, openrtb_ext.BidderZeroClickFraud, "https://s.0cf.io/sync?gdpr={{.GDPR}}&gdpr_consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&r="+url.QueryEscape(externalURL)+"%2Fsetuid%3Fbidder%3Dzeroclickfraud%26gdpr%3D{{.GDPR}}%26gdpr_consent%3D{{.GDPRConsent}}%26uid%3D%24%7Buid%7D")
 }
 
 func setDefaultUsersync(m map[string]Adapter, bidder openrtb_ext.BidderName, defaultValue string) {
@@ -671,15 +690,21 @@ func SetupViper(v *viper.Viper, filename string) {
 	v.SetDefault("adapters.33across.endpoint", "http://ssc.33across.com/api/v1/hb")
 	v.SetDefault("adapters.33across.partner_id", "")
 	v.SetDefault("adapters.adform.endpoint", "http://adx.adform.net/adx")
+	v.SetDefault("adapters.adgeneration.endpoint", "https://d.socdm.com/adsv/v1")
 	v.SetDefault("adapters.adkernel.endpoint", "http://{{.Host}}/hb?zone={{.ZoneID}}")
 	v.SetDefault("adapters.adkerneladn.endpoint", "http://{{.Host}}/rtbpub?account={{.PublisherID}}")
+	v.SetDefault("adapters.admixer.endpoint", "http://inv-nets.admixer.net/pbs.aspx")
+	v.SetDefault("adapters.adocean.endpoint", "https://{{.Host}}")
+	v.SetDefault("adapters.adoppler.endpoint", "http://app.trustedmarketplace.io/ads")
 	v.SetDefault("adapters.adpone.endpoint", "http://rtb.adpone.com/bid-request?src=prebid_server")
 	v.SetDefault("adapters.adtelligent.endpoint", "http://hb.adtelligent.com/auction")
 	v.SetDefault("adapters.advangelists.endpoint", "http://nep.advangelists.com/xp/get?pubid={{.PublisherID}}")
+	v.SetDefault("adapters.aja.endpoint", "https://ad.as.amanad.adtdp.com/v1/bid/4")
 	v.SetDefault("adapters.applogy.endpoint", "http://rtb.applogy.com/v1/prebid")
 	v.SetDefault("adapters.appnexus.endpoint", "http://ib.adnxs.com/openrtb2") // Docs: https://wiki.appnexus.com/display/supply/Incoming+Bid+Request+from+SSPs
 	v.SetDefault("adapters.appnexus.platform_id", "5")
 	v.SetDefault("adapters.beachfront.endpoint", "https://display.bfmio.com/prebid_display")
+	v.SetDefault("adapters.beachfront.extra_info", "{\"video_endpoint\":\"https://reachms.bfmio.com/bid.json?exchange_id\"}")
 	v.SetDefault("adapters.brightroll.endpoint", "http://east-bid.ybp.yahoo.com/bid/appnexuspbs")
 	v.SetDefault("adapters.consumable.endpoint", "https://e.serverbid.com/api/v2")
 	v.SetDefault("adapters.conversant.endpoint", "http://api.hb.ad.cpe.dotomi.com/s2s/header/24")
@@ -694,11 +719,15 @@ func SetupViper(v *viper.Viper, filename string) {
 	v.SetDefault("adapters.gumgum.endpoint", "https://g2.gumgum.com/providers/prbds2s/bid")
 	v.SetDefault("adapters.improvedigital.endpoint", "http://ad.360yield.com/pbs")
 	v.SetDefault("adapters.ix.endpoint", "http://appnexus-us-east.lb.indexww.com/transbidder?p=184932")
+	v.SetDefault("adapters.kidoz.endpoint", "http://prebid-adapter.kidoz.net/openrtb2/auction?src=prebid-server")
 	v.SetDefault("adapters.kubient.endpoint", "http://kbntx.ch/prebid")
 	v.SetDefault("adapters.lifestreet.endpoint", "https://prebid.s2s.lfstmedia.com/adrequest")
 	v.SetDefault("adapters.lockerdome.endpoint", "https://lockerdome.com/ladbid/prebidserver/openrtb2")
+	v.SetDefault("adapters.lunamedia.endpoint", "http://api.lunamedia.io/xp/get?pubid={{.PublisherID}}")
 	v.SetDefault("adapters.marsmedia.endpoint", "https://bid306.rtbsrv.com/bidder/?bid=f3xtet")
 	v.SetDefault("adapters.mgid.endpoint", "https://prebid.mgid.com/prebid/")
+	v.SetDefault("adapters.nanointeractive.endpoint", "https://ad.audiencemanager.de/hbs")
+	v.SetDefault("adapters.ninthdecimal.endpoint", "http://rtb.ninthdecimal.com/xp/get?pubid={{.PublisherID}}")
 	v.SetDefault("adapters.openx.endpoint", "http://rtb.openx.net/prebid")
 	v.SetDefault("adapters.pubmatic.endpoint", "https://hbopenbid.pubmatic.com/translator?source=prebid-server")
 	v.SetDefault("adapters.pubnative.endpoint", "http://dsp.pubnative.net/bid/v1/request")
@@ -713,14 +742,19 @@ func SetupViper(v *viper.Viper, filename string) {
 	v.SetDefault("adapters.sovrn.endpoint", "http://ap.lijit.com/rtb/bid?src=prebid_server")
 	v.SetDefault("adapters.synacormedia.endpoint", "http://{{.Host}}.technoratimedia.com/openrtb/bids/{{.Host}}")
 	v.SetDefault("adapters.tappx.endpoint", "https://{{.Host}}")
+	v.SetDefault("adapters.telaria.endpoint", "https://ads.tremorhub.com/ad/rtb/prebid")
 	v.SetDefault("adapters.triplelift_native.disabled", true)
 	v.SetDefault("adapters.triplelift_native.extra_info", "{\"publisher_whitelist\":[]}")
 	v.SetDefault("adapters.triplelift.endpoint", "https://tlx.3lift.com/s2s/auction?supplier_id=20")
+	v.SetDefault("adapters.ucfunnel.endpoint", "http://apac-hk-adx.aralego.com/prebid")
 	v.SetDefault("adapters.unruly.endpoint", "http://targeting.unrulymedia.com/openrtb/2.2")
+	v.SetDefault("adapters.valueimpression.endpoint", "https://rtb.valueimpression.com/endpoint")
 	v.SetDefault("adapters.verizonmedia.disabled", true)
 	v.SetDefault("adapters.visx.endpoint", "https://t.visx.net/s2s_bid?wrapperType=s2s_prebid_standard")
 	v.SetDefault("adapters.vrtcal.endpoint", "http://rtb.vrtcal.com/bidder_prebid.vap?ssp=1804")
 	v.SetDefault("adapters.yieldmo.endpoint", "https://ads.yieldmo.com/exchange/prebid-server")
+	v.SetDefault("adapters.yieldone.endpoint", "https://y.one.impact-ad.jp/hbs_imp")
+	v.SetDefault("adapters.zeroclickfraud.endpoint", "http://{{.Host}}/openrtb2?sid={{.SourceId}}")
 
 	v.SetDefault("max_request_size", 1024*256)
 	v.SetDefault("analytics.file.filename", "")
@@ -740,6 +774,9 @@ func SetupViper(v *viper.Viper, filename string) {
 	v.SetDefault("blacklisted_accts", []string{""})
 	v.SetDefault("account_required", false)
 	v.SetDefault("certificates_file", "")
+
+	v.SetDefault("request_timeout_headers.request_time_in_queue", "")
+	v.SetDefault("request_timeout_headers.request_timeout_in_queue", "")
 
 	// Set environment variable support:
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))

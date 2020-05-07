@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/prebid/prebid-server/pbsmetrics"
 	"io/ioutil"
 	"net/http"
 	"path/filepath"
@@ -38,6 +39,7 @@ import (
 	"github.com/prebid/prebid-server/pbs"
 	metricsConf "github.com/prebid/prebid-server/pbsmetrics/config"
 	pbc "github.com/prebid/prebid-server/prebid_cache_client"
+	"github.com/prebid/prebid-server/router/aspects"
 	"github.com/prebid/prebid-server/ssl"
 	storedRequestsConf "github.com/prebid/prebid-server/stored_requests/config"
 	"github.com/prebid/prebid-server/usersync/usersyncers"
@@ -250,9 +252,14 @@ func New(cfg *config.Configuration, rateConvertor *currencies.RateConverter) (r 
 		glog.Fatalf("Failed to create the amp endpoint handler. %v", err)
 	}
 
-	videoEndpoint, err := openrtb2.NewVideoEndpoint(theExchange, paramsValidator, fetcher, videoFetcher, categoriesFetcher, cfg, r.MetricsEngine, pbsAnalytics, disabledBidders, defReqJSON, activeBiddersMap)
+	videoEndpoint, err := openrtb2.NewVideoEndpoint(theExchange, paramsValidator, fetcher, videoFetcher, categoriesFetcher, cfg, r.MetricsEngine, pbsAnalytics, disabledBidders, defReqJSON, activeBiddersMap, cacheClient)
 	if err != nil {
 		glog.Fatalf("Failed to create the video endpoint handler. %v", err)
+	}
+
+	requestTimeoutHeaders := config.RequestTimeoutHeaders{}
+	if cfg.RequestTimeoutHeaders != requestTimeoutHeaders {
+		videoEndpoint = aspects.QueuedRequestTimeout(videoEndpoint, cfg.RequestTimeoutHeaders, r.MetricsEngine, pbsmetrics.ReqTypeVideo)
 	}
 
 	r.POST("/auction", endpoints.Auction(cfg, syncers, gdprPerms, r.MetricsEngine, dataCache, exchanges))
